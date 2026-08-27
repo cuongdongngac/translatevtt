@@ -1,0 +1,1 @@
+Vui lòng KHÔNG dịch các từ khóa liên quan đến phần mềm, các câu lệnh, và các menu trên giao diện người dùng. Cố gắng giữ nguyên các thuật ngữ kỹ thuật tiếng Anh nếu tiếng Việt không có từ tương đương phổ biến.
