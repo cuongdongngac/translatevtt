@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -27,24 +29,24 @@ func main() {
 	// Read api.txt
 	apiFile := filepath.Join(cwd, "api.txt")
 	apiKey := ""
-	modelName := "google/gemini-flash-1.5" // OpenRouter default model
+	customModel := ""
 	if b, err := os.ReadFile(apiFile); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 		if len(lines) > 0 {
 			apiKey = strings.TrimSpace(lines[0])
 		}
 		if len(lines) > 1 {
-			customModel := strings.TrimSpace(lines[1])
-			if customModel != "" {
-				modelName = customModel
-			}
+			customModel = strings.TrimSpace(lines[1])
 		}
 	} else {
-		apiKey = os.Getenv("OPENROUTER_API_KEY")
+		apiKey = os.Getenv("API_KEY")
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENROUTER_API_KEY")
+		}
 	}
 
 	if apiKey == "" {
-		log.Fatal("API Key not found in api.txt or OPENROUTER_API_KEY environment variable")
+		log.Fatal("API Key not found in api.txt or environment variables")
 	}
 
 	// Đọc instruction.txt
@@ -53,6 +55,55 @@ func main() {
 	if b, err := os.ReadFile(instructionFile); err == nil {
 		instructionText = strings.TrimSpace(string(b))
 	}
+
+	// Menu chọn API
+	fmt.Println("======================================")
+	fmt.Println("    CHỌN NGUỒN CUNG CẤP AI (API)")
+	fmt.Println("======================================")
+	fmt.Println("1. Gemini")
+	fmt.Println("2. ChatGPT (OpenAI)")
+	fmt.Println("3. Claude (Anthropic)")
+	fmt.Println("4. OpenRouter")
+	fmt.Println("--------------------------------------")
+	fmt.Print("Vui lòng nhập số (1-4) và nhấn Enter: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	choiceStr, _ := reader.ReadString('\n')
+	choiceStr = strings.TrimSpace(choiceStr)
+
+	provider := 4
+	modelName := customModel
+
+	switch choiceStr {
+	case "1":
+		provider = 1
+		if modelName == "" {
+			modelName = "gemini-1.5-flash"
+		}
+	case "2":
+		provider = 2
+		if modelName == "" {
+			modelName = "gpt-4o-mini"
+		}
+	case "3":
+		provider = 3
+		if modelName == "" {
+			modelName = "claude-3-5-sonnet-20240620"
+		}
+	case "4":
+		provider = 4
+		if modelName == "" {
+			modelName = "google/gemini-flash-1.5"
+		}
+	default:
+		log.Println("Lựa chọn không hợp lệ, sử dụng mặc định: OpenRouter")
+		provider = 4
+		if modelName == "" {
+			modelName = "google/gemini-flash-1.5"
+		}
+	}
+
+	fmt.Printf("\n>>> Đã chọn cấu hình:\nProvider: %d\nModel: %s\n\n", provider, modelName)
 
 	ctx := context.Background()
 
@@ -80,7 +131,7 @@ func main() {
 			
 			if needTranslate {
 				log.Printf("Translating: %s (using model: %s)", path, modelName)
-				translateSubtitle(ctx, apiKey, modelName, path, viPath, instructionText, *formatFlag)
+				translateSubtitle(ctx, provider, apiKey, modelName, path, viPath, instructionText, *formatFlag)
 			}
 		}
 		return nil
@@ -92,7 +143,7 @@ func main() {
 	log.Println("Finished!")
 }
 
-func translateSubtitle(ctx context.Context, apiKey, modelName, enPath, viPath, extraInstruction, format string) {
+func translateSubtitle(ctx context.Context, provider int, apiKey, modelName, enPath, viPath, extraInstruction, format string) {
 	b, err := os.ReadFile(enPath)
 	if err != nil {
 		log.Printf("Error reading file %s: %v", enPath, err)
@@ -143,7 +194,7 @@ func translateSubtitle(ctx context.Context, apiKey, modelName, enPath, viPath, e
 		
 		log.Printf("Translating chunk %d to %d (out of %d blocks)...", i+1, end, len(blocks))
 		
-		translatedChunk := callOpenRouter(ctx, apiKey, modelName, systemInstruction, chunkText)
+		translatedChunk := callAPI(ctx, provider, apiKey, modelName, systemInstruction, chunkText)
 		if translatedChunk == "" {
 			log.Printf("Failed to translate chunk %d to %d. Skipping file %s", i+1, end, enPath)
 			return
@@ -169,13 +220,49 @@ func translateSubtitle(ctx context.Context, apiKey, modelName, enPath, viPath, e
 	}
 }
 
-func callOpenRouter(ctx context.Context, apiKey, modelName, systemInstruction, content string) string {
-	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemInstruction},
-			{"role": "user", "content": content},
-		},
+func callAPI(ctx context.Context, provider int, apiKey, modelName, systemInstruction, content string) string {
+	var reqBody interface{}
+	var url string
+	headers := make(map[string]string)
+
+	if provider == 3 {
+		// Anthropic Claude API
+		url = "https://api.anthropic.com/v1/messages"
+		reqBody = map[string]interface{}{
+			"model":      modelName,
+			"max_tokens": 8192,
+			"system":     systemInstruction,
+			"messages": []map[string]string{
+				{"role": "user", "content": content},
+			},
+		}
+		headers["x-api-key"] = apiKey
+		headers["anthropic-version"] = "2023-06-01"
+		headers["content-type"] = "application/json"
+	} else {
+		// OpenAI compatible APIs
+		if provider == 1 { // Gemini
+			url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+		} else if provider == 2 { // ChatGPT
+			url = "https://api.openai.com/v1/chat/completions"
+		} else { // OpenRouter (provider 4)
+			url = "https://openrouter.ai/api/v1/chat/completions"
+		}
+
+		reqBody = map[string]interface{}{
+			"model": modelName,
+			"messages": []map[string]string{
+				{"role": "system", "content": systemInstruction},
+				{"role": "user", "content": content},
+			},
+		}
+		headers["Authorization"] = "Bearer " + apiKey
+		headers["Content-Type"] = "application/json"
+		
+		if provider == 4 {
+			headers["HTTP-Referer"] = "https://github.com/vtt-translator"
+			headers["X-Title"] = "VTT Translator"
+		}
 	}
 	
 	jsonData, _ := json.Marshal(reqBody)
@@ -183,16 +270,15 @@ func callOpenRouter(ctx context.Context, apiKey, modelName, systemInstruction, c
 	var translatedText string
 
 	for i := 0; i < maxRetries; i++ {
-		req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(jsonData))
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 		if err != nil {
 			log.Printf("Error creating request: %v", err)
 			return ""
 		}
 		
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("HTTP-Referer", "https://github.com/vtt-translator")
-		req.Header.Set("X-Title", "VTT Translator")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
 
 		client := &http.Client{Timeout: 5 * time.Minute}
 		resp, err := client.Do(req)
@@ -218,27 +304,43 @@ func callOpenRouter(ctx context.Context, apiKey, modelName, systemInstruction, c
 			continue
 		}
 
-		var openRouterResp struct {
-			Choices []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			} `json:"choices"`
-		}
-
-		if err := json.Unmarshal(respBody, &openRouterResp); err != nil {
-			log.Printf("JSON parsing error: %v", err)
-			time.Sleep(10 * time.Second)
-			continue
-		}
-
-		if len(openRouterResp.Choices) > 0 {
-			translatedText = openRouterResp.Choices[0].Message.Content
-			break
+		if provider == 3 {
+			var anthropicResp struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			}
+			if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
+				log.Printf("JSON parsing error: %v", err)
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			if len(anthropicResp.Content) > 0 {
+				translatedText = anthropicResp.Content[0].Text
+				break
+			}
 		} else {
-			log.Printf("Empty response from OpenRouter: %s", string(respBody))
+			var openAIResp struct {
+				Choices []struct {
+					Message struct {
+						Content string `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal(respBody, &openAIResp); err != nil {
+				log.Printf("JSON parsing error: %v", err)
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			if len(openAIResp.Choices) > 0 {
+				translatedText = openAIResp.Choices[0].Message.Content
+				break
+			}
+		}
+
+		if translatedText == "" {
+			log.Printf("Empty response from API: %s", string(respBody))
 			time.Sleep(10 * time.Second)
-			continue
 		}
 	}
 

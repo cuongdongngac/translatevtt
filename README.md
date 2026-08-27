@@ -1,18 +1,20 @@
 # AI Subtitle Translator (VTT & SRT)
 
-Đây là một ứng dụng dòng lệnh (CLI) được viết bằng Go, có chức năng tự động tìm kiếm và dịch các tệp phụ đề từ tiếng Anh sang tiếng Việt sử dụng AI thông qua OpenRouter API. 
+Đây là một ứng dụng dòng lệnh (CLI) được viết bằng Go, có chức năng tự động tìm kiếm và dịch các tệp phụ đề từ tiếng Anh sang tiếng Việt sử dụng AI.
 
-Ứng dụng **hỗ trợ đồng thời cả hai định dạng phụ đề phổ biến là `.vtt` và `.srt`** dựa vào tham số truyền vào khi chạy.
+Ứng dụng **hỗ trợ đồng thời cả hai định dạng phụ đề phổ biến là `.vtt` và `.srt`** dựa vào tham số truyền vào khi chạy. Đặc biệt, công cụ hiện đã hỗ trợ **Menu chọn cấu hình API tương tác**, cho phép người dùng dễ dàng chuyển đổi giữa các hãng AI hàng đầu như Google Gemini, OpenAI (ChatGPT), Anthropic (Claude) hoặc OpenRouter.
 
 ## Tính năng nổi bật
 
+- **Đa dạng nguồn AI:** Chọn trực tiếp từ Menu tương tác giữa Gemini, ChatGPT, Claude, và OpenRouter mà không cần sửa code.
+- **Tự động chọn Model:** Tự động gán model AI tối ưu (nhanh nhất, rẻ nhất) tương ứng với từng nhà cung cấp nếu người dùng không tự thiết lập.
 - **Hỗ trợ đa định dạng:** Dịch mượt mà cả tệp WebVTT (`.vtt`) và SubRip (`.srt`).
 - **Tự động quét thư mục đệ quy:** Tìm kiếm tất cả các tệp phụ đề tiếng Anh (có đuôi `.en.vtt` hoặc `.en.srt`) trong thư mục hiện tại và tất cả các thư mục con.
 - **Bảo toàn cấu trúc gốc:** Giữ nguyên các định dạng gốc như dấu thời gian, số thứ tự, header `WEBVTT` và các dòng trống của tệp phụ đề.
 - **Dịch "cuốn chiếu" thông minh:** Tệp phụ đề được chia thành các đoạn nhỏ (mặc định 40 block mỗi đoạn) để gửi lên API, giúp bảo đảm ngữ cảnh, tối ưu giới hạn token và chất lượng dịch thuật.
 - **Tiếp tục dịch khi bị gián đoạn (Resume):** Tự động nhận diện và bỏ qua các tệp đã được dịch thành công sang tiếng Việt. Nếu tệp đích tồn tại nhưng chưa có tiếng Việt, ứng dụng sẽ dịch đè lên.
 - **Tự động thử lại (Auto-Retry):** Xử lý tốt các tình trạng lỗi mạng, API chập chờn hoặc bị giới hạn tốc độ (rate limit - lỗi 429) với cơ chế tự động chờ và thử lại.
-- **Tùy chỉnh linh hoạt:** Thay đổi model AI dễ dàng (mặc định là `google/gemini-flash-1.5`) và cho phép thêm các chỉ dẫn dịch thuật (System Prompt) từ file bên ngoài.
+- **Tùy chỉnh linh hoạt:** Cho phép thêm các chỉ dẫn dịch thuật (System Prompt) từ file bên ngoài.
 
 ## Cài đặt & Yêu cầu
 
@@ -29,21 +31,21 @@
 4. Build ứng dụng:
    ```bash
    # Build cho Windows
-   go build -o translator.exe main.go
+   go build -o wtranslate.exe main.go
    
    # Build cho Linux/macOS
-   go build -o translator main.go
+   GOOS="linux" GOARCH="amd64" go build -o ltranslate main.go
    ```
 
 ## Hướng dẫn sử dụng
 
 ### 1. Cấu hình API Key và Model
 
-Tạo một tệp có tên `api.txt` tại thư mục chứa file thực thi (`translator.exe`). Cấu trúc của tệp như sau:
-- **Dòng 1:** OpenRouter API Key của bạn (Bắt buộc).
-- **Dòng 2:** (Tùy chọn) Tên model AI trên OpenRouter. Nếu để trống, mặc định sẽ là `google/gemini-flash-1.5`.
+Tạo một tệp có tên `api.txt` tại thư mục chứa file thực thi (`wtranslate.exe` hoặc `ltranslate`). Cấu trúc của tệp như sau:
+- **Dòng 1:** API Key của bạn (Lấy từ Google AI Studio, OpenAI, Anthropic, hoặc OpenRouter - Tùy thuộc vào việc bạn định chọn hãng nào ở Menu) (Bắt buộc).
+- **Dòng 2:** (Tùy chọn) Tên model AI. Nếu để trống, ứng dụng sẽ tự động chọn model mặc định tối ưu nhất tuỳ theo hãng AI mà bạn chọn ở bước sau.
 
-*Lưu ý:* Ứng dụng cũng hỗ trợ lấy API Key qua biến môi trường `OPENROUTER_API_KEY`.
+*Lưu ý:* Ứng dụng cũng hỗ trợ lấy API Key qua biến môi trường `API_KEY` hoặc `OPENROUTER_API_KEY`.
 
 ### 2. Thêm chỉ dẫn dịch thuật chuyên ngành (Tùy chọn)
 
@@ -55,17 +57,36 @@ Mở Terminal / Command Prompt tại thư mục chứa công cụ và chạy:
 
 **Dịch các tệp `.vtt` (Mặc định):**
 ```bash
-./translator.exe
-# Hoặc truyền tham số rõ ràng:
-./translator.exe -format vtt
+# Trên Windows
+.\wtranslate.exe
+
+# Trên Linux
+./ltranslate
 ```
-*Logic file:* Tìm `*.en.vtt` -> Dịch -> Lưu thành `*.vi.vtt`
 
 **Dịch các tệp `.srt`:**
 ```bash
-./translator.exe -format srt
+# Trên Windows
+.\wtranslate.exe -format srt
+
+# Trên Linux
+./ltranslate -format srt
 ```
-*Logic file:* Tìm `*.en.srt` -> Dịch -> Lưu thành `*.vi.srt`
+
+**Menu tương tác sẽ xuất hiện:**
+Ngay khi chạy, phần mềm sẽ hiển thị một menu để bạn chọn nguồn AI:
+```text
+======================================
+    CHỌN NGUỒN CUNG CẤP AI (API)
+======================================
+1. Gemini
+2. ChatGPT (OpenAI)
+3. Claude (Anthropic)
+4. OpenRouter
+--------------------------------------
+Vui lòng nhập số (1-4) và nhấn Enter: 
+```
+Gõ con số tương ứng với API Key mà bạn đang có và nhấn Enter. Ứng dụng sẽ tự động bắt đầu quét và dịch tệp.
 
 ---
 
